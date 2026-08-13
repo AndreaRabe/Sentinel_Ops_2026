@@ -1,0 +1,32 @@
+/* Design tokens - identite "Sentinel Ops / Command Center" (voir cahier des charges section 11) */
+:root {
+  --bg: #1a1d24;
+  --surface: #20242c;
+  --surface-elevated: #262b34;
+  --surface-hover: #2a2f39;
+  --border: #343a46;
+  --text-primary: #eef0f3;
+  --text-secondary: #a9adb5;
+  --text-tertiary: #7a7e86;
+  --primary: #d1454a;
+  --success: #3ca675;
+  --warning: #d9a53f;
+  --danger: #d9433c;
+  --info: #4f8fcf;
+}
+
+[data-theme="light"] {
+  --bg: #fafafb;
+  --surface: #ffffff;
+  --surface-elevated: #fdfdfe;
+  --surface-hover: #f1f1f3;
+  --border: #dfdfe2;
+  --text-primary: #26262b;
+  --text-secondary: #56565e;
+  --text-tertiary: #7c7c84;
+  --primary: #c93e3e;
+  --success: #339873;
+  --warning: #c99432;
+  --danger: #c93b35;
+  --info: #3e76b0;
+}

@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "sentinel-ops-backend"
+version = "0.1.0"
+description = "API backend - Sentinel Ops, plateforme de gestion d'equipe securite"
+authors = ["Sentinel Ops"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.115.0"
+uvicorn = {extras = ["standard"], version = "^0.32.0"}
+sqlalchemy = "^2.0.35"
+alembic = "^1.13.3"
+asyncpg = "^0.30.0"
+pydantic = {extras = ["email"], version = "^2.9.2"}
+pydantic-settings = "^2.5.2"
+pyjwt = "^2.9.0"
+argon2-cffi = "^23.1.0"
+apscheduler = "^3.10.4"
+python-multipart = "^0.0.12"
+redis = "^5.1.1"
+weasyprint = "^62.3"
+openpyxl = "^3.1.5"
+zxcvbn = "^4.4.28"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
+pytest-asyncio = "^0.24.0"
+httpx = "^0.27.2"
+ruff = "^0.7.0"
+black = "^24.10.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.black]
+line-length = 100
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
