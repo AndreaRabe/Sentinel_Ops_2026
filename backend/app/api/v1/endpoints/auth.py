@@ -30,7 +30,7 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         key=REFRESH_COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=True,
+        secure=settings.cookie_secure,
         samesite="strict",
         max_age=settings.jwt_refresh_token_expire_days * 24 * 60 * 60,
         path=REFRESH_COOKIE_PATH,

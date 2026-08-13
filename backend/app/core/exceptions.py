@@ -19,13 +19,6 @@ class InvalidCredentialsError(Exception):
         self.message = message
 
 
-class AccountLockedError(Exception):
-    def __init__(
-        self, message: str = "Compte temporairement verrouille suite a trop de tentatives."
-    ):
-        self.message = message
-
-
 class PasswordPolicyError(Exception):
     def __init__(self, message: str = "Le mot de passe ne respecte pas la politique de securite."):
         self.message = message
@@ -51,13 +44,6 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=401,
             content={"error": {"code": "INVALID_CREDENTIALS", "message": exc.message}},
-        )
-
-    @app.exception_handler(AccountLockedError)
-    async def handle_account_locked(_: Request, exc: AccountLockedError):
-        return JSONResponse(
-            status_code=429,
-            content={"error": {"code": "ACCOUNT_LOCKED", "message": exc.message}},
         )
 
     @app.exception_handler(PasswordPolicyError)

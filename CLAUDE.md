@@ -8,13 +8,13 @@ Toutes les decisions de conception detaillees sont dans `sentinel-ops-cahier-des
 - 5-15 utilisateurs, self-hosted sur reseau local (LAN), un seul developpeur. Ne jamais proposer de solution cloud/Kubernetes/microservices.
 - Retention audit legale : 3 ans, contractuelle avec un client. La table `audit_logs` est **append-only** : ne jamais creer de route ou de code permettant UPDATE/DELETE dessus.
 - Cloture d'une tache par un agent = pas de validation bloquante par un superieur (decide explicitement).
-- Deploiement manuel maitrise (`git pull` + `make migrate` + `docker compose up -d --build`) — ne jamais mettre en place d'auto-deploiement declenche a distance.
+- Deploiement manuel maitrise — ne jamais mettre en place d'auto-deploiement declenche a distance. Docker/nginx font partie de l'architecture cible (voir cahier des charges) mais ne sont pas encore utilises : le projet tourne pour le moment en installation native (voir README).
 
 ## Stack
 
 - Backend : FastAPI + Poetry + SQLAlchemy (async) + Alembic + Argon2id + APScheduler (pas de Celery/Redis broker).
 - Frontend : React + Vite + TypeScript + Tailwind, TanStack Query (etat serveur) + Zustand (etat UI global uniquement).
-- DB : PostgreSQL. Cache/rate-limit : Redis.
+- DB : PostgreSQL. Cache/rate-limit : Redis prevu dans l'architecture cible mais pas encore utilise (contexte pro strict de l'utilisateur) — le verrouillage brute-force du login qui en depend est donc actuellement desactive (voir README, section Securite).
 
 ## Conventions de code
 
@@ -32,7 +32,7 @@ Voir section 13 du cahier des charges pour le detail des phases. Prochaine etape
 
 ```bash
 make install   # poetry install + npm install
-make dev       # environnement de developpement complet (docker compose dev)
+make dev       # backend (uvicorn --reload) + frontend (Vite) en parallele, sans Docker
 make test      # tests backend (pytest) + frontend (vitest)
 make migrate   # alembic upgrade head
 make seed      # bootstrap du compte Super Admin si base vierge

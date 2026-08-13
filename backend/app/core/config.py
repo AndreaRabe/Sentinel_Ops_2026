@@ -9,24 +9,21 @@ class Settings(BaseSettings):
     # Base de donnees
     database_url: str
 
-    # Redis
-    redis_url: str = "redis://localhost:6379/0"
-
     # Securite
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 30
 
-    # Verrouillage brute-force (cahier des charges section 7)
-    login_max_attempts: int = 5
-    login_lockout_minutes: int = 15
+    # Cookie de refresh token : Secure desactive par defaut (dev en HTTP simple).
+    # A forcer a true en production, ou le trafic passe par nginx en HTTPS.
+    cookie_secure: bool = False
 
     # Seed
     seed_admin_email: str = "admin@sentinel-ops.local"
 
     # CORS
-    cors_allowed_origins: str = "https://localhost:5173"
+    cors_allowed_origins: str = "http://localhost:5173"
 
     @property
     def cors_origins_list(self) -> list[str]:

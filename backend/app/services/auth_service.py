@@ -1,8 +1,12 @@
 """Service d'authentification (Phase 5) - regles metier + audit explicite.
 
-Verrouillage brute-force (5 tentatives / 15 min via Redis), politique de mot
-de passe (zxcvbn + historique anti-reutilisation), emission/rotation des
-tokens JWT + refresh token opaque hashe.
+Politique de mot de passe (zxcvbn + historique anti-reutilisation),
+emission/rotation des tokens JWT + refresh token opaque hashe.
+
+NOTE : le verrouillage brute-force (cahier des charges section 7) est
+deliberement differe - il necessite Redis, non utilise pour le moment
+(voir README). Les tentatives de login echouees restent journalisees dans
+audit_logs, mais rien ne bloque encore un compte apres N echecs.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -10,8 +14,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import AccountLockedError, InvalidCredentialsError, PasswordPolicyError
-from app.core.redis import redis_client
+from app.core.exceptions import InvalidCredentialsError, PasswordPolicyError
 from app.core.security import (
     check_password_strength,
     create_access_token,
@@ -29,12 +32,6 @@ from app.repositories import (
 )
 from app.services import audit_service
 
-_LOCKOUT_KEY_PREFIX = "login_attempts:"
-
-
-def _lockout_key(email: str) -> str:
-    return f"{_LOCKOUT_KEY_PREFIX}{email.lower()}"
-
 
 async def _issue_tokens(db: AsyncSession, user: User) -> tuple[str, str]:
     permissions = await role_repository.get_permission_codes(db, user.role_id)
@@ -50,26 +47,8 @@ async def _issue_tokens(db: AsyncSession, user: User) -> tuple[str, str]:
 async def authenticate(
     db: AsyncSession, email: str, password: str, ip_address: str | None
 ) -> tuple[str, str, bool]:
-    key = _lockout_key(email)
-    attempts = await redis_client.get(key)
-    if attempts is not None and int(attempts) >= settings.login_max_attempts:
-        await audit_service.log_action(
-            db,
-            actor_user_id=None,
-            action="auth.login_locked",
-            resource_type="user",
-            resource_id=email,
-            ip_address=ip_address,
-        )
-        await db.commit()
-        raise AccountLockedError()
-
     user = await user_repository.get_by_email(db, email)
     if user is None or not user.is_active or not verify_password(password, user.password_hash):
-        pipe = redis_client.pipeline()
-        pipe.incr(key)
-        pipe.expire(key, settings.login_lockout_minutes * 60)
-        await pipe.execute()
         await audit_service.log_action(
             db,
             actor_user_id=user.id if user else None,
@@ -81,7 +60,6 @@ async def authenticate(
         await db.commit()
         raise InvalidCredentialsError()
 
-    await redis_client.delete(key)
     access_token, refresh_token_plain = await _issue_tokens(db, user)
     await user_repository.update_last_login(db, user)
     await audit_service.log_action(
