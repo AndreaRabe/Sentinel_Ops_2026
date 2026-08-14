@@ -17,6 +17,33 @@ Documentation complète du projet (périmètre, architecture, modèle de donnée
 
 ---
 
+## Modules disponibles
+
+| Module | Contenu |
+|---|---|
+| **Authentification** | Login, refresh, logout, mot de passe temporaire forcé, politique Argon2id + zxcvbn + historique anti-réutilisation |
+| **Administration** | Utilisateurs (création, modification, activation, réinitialisation de mot de passe), sites, consultation des rôles, paramètres système |
+| **Tâches** | Machine à états, assignation multiple, priorité, échéance, checklist, commentaires, pièces jointes, dépendances, historique, modèles réutilisables et récurrence RRULE. Vues Liste et Kanban sur les mêmes données |
+| **Incidents** | Déclaration, gravité, journal d'actions, résolution avec compte rendu obligatoire, clôture, pièces jointes |
+| **Dashboard / Planning** | KPI du jour, retards, urgences, charge de travail ; calendrier hebdomadaire |
+| **Notifications** | In-app uniquement (email/SMS en V2) |
+| **Rapports** | Activité jour/semaine/mois, exports PDF (WeasyPrint) et Excel (openpyxl) |
+| **Audit** | Consultation filtrée, **lecture seule stricte**, rétention 3 ans |
+
+L'API expose sa documentation interactive sur `/docs`.
+
+### Tâches planifiées (APScheduler)
+
+Deux jobs tournent dans le processus backend :
+
+- **Détection des retards**, toutes les 15 minutes : bascule en `LATE` les tâches échues encore ouvertes, journalise la transition et notifie les agents assignés.
+- **Génération des récurrences**, chaque nuit à 2h : matérialise les tâches des modèles portant une RRULE, sur un horizon de 14 jours.
+- **Rappel des échéances**, chaque matin à 7h : notifie les agents des tâches à rendre dans les 24 h. La cadence quotidienne et la fenêtre de 24 h (`due_soon.LOOKAHEAD`) vont de pair — les modifier séparément produirait des rappels en double.
+
+> ⚠️ Ces jobs supposent **un seul processus backend**. Si uvicorn devait un jour être lancé avec plusieurs workers, chacun exécuterait les jobs et dupliquerait les tâches générées : passer alors `SCHEDULER_ENABLED=false` sur tous les workers sauf un.
+
+---
+
 ## Prérequis
 
 - Python 3.12 + [Poetry](https://python-poetry.org/)
@@ -49,6 +76,14 @@ Le fichier `.env` est lu par le backend (`pydantic-settings`) et par les command
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Durée de vie de l'access token (défaut 15 min, gardé en mémoire côté client, jamais persisté). |
 | `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | Durée de vie du refresh token opaque (défaut 30 jours, stocké hashé en base, transporté en cookie httpOnly). |
 | `COOKIE_SECURE` | Attribut `Secure` du cookie de refresh token. **`false` tant que l'application tourne en HTTP local** (cas actuel). À passer manuellement à `true` dès que l'application sera servie en HTTPS. |
+
+### Pièces jointes et planification
+
+| Variable | Rôle |
+|---|---|
+| `ATTACHMENTS_DIR` | Répertoire local où sont écrits les fichiers joints aux tâches et incidents (défaut `storage/attachments`, relatif au répertoire de lancement du backend). **À sauvegarder au même titre que la base** : les métadonnées en base sans les fichiers ne valent rien. Les noms de fichiers d'origine ne sont jamais utilisés sur disque (nom généré par le serveur), extensions et taille (20 Mo) sont contrôlées. |
+| `SCHEDULER_TIMEZONE` | Fuseau des jobs planifiés (défaut `Europe/Paris`). |
+| `SCHEDULER_ENABLED` | Active les jobs APScheduler. À passer à `false` sur tous les workers sauf un si le backend tourne un jour en multi-processus. |
 
 ### Seed (premier compte)
 
@@ -136,7 +171,9 @@ Pas encore mis en place : la stratégie cible (Docker Compose + nginx en TLS aut
 │   │   ├── services/                     # Logique métier + appel audit explicite
 │   │   ├── repositories/                 # Accès données pur (aucune règle métier)
 │   │   ├── models/                       # Modèles SQLAlchemy
-│   │   └── core/                         # Config, sécurité (JWT/Argon2id), RBAC
+│   │   ├── jobs/                         # APScheduler : retards, récurrence RRULE
+│   │   ├── middleware/                   # Logs JSON, une ligne par requête
+│   │   └── core/                         # Config, sécurité, RBAC, scope ABAC, machine à états
 │   └── alembic/versions/                 # Migrations DB versionnées
 ├── frontend/                             # SPA React
 ├── Makefile
@@ -158,7 +195,33 @@ Pas encore mis en place : la stratégie cible (Docker Compose + nginx en TLS aut
 - Toute modification du schéma de permissions (`role_permissions`) doit passer par une migration versionnée (voir `backend/app/core/rbac_matrix.py` et section Alembic ci-dessus), jamais une modification manuelle en base.
 - `audit_logs` est protégée par un trigger PostgreSQL append-only : aucun code applicatif ne doit tenter d'`UPDATE`/`DELETE` dessus (cela échouerait de toute façon au niveau base).
 - `COOKIE_SECURE` doit être passé à `true` dès que l'application n'est plus servie en HTTP local uniquement.
-- **Verrouillage brute-force différé** : le cahier des charges (section 7) prévoit un blocage après 5 tentatives de login échouées en 15 min via Redis. Redis n'étant pas utilisé pour le moment, ce blocage n'est pas actif — seules les tentatives échouées restent journalisées dans `audit_logs`. À réactiver dans `auth_service.py` dès que Redis sera réintroduit.
+- **Verrouillage brute-force actif, sans Redis** : après `LOGIN_MAX_ATTEMPTS` échecs (5 par défaut) sur `LOGIN_LOCKOUT_MINUTES` (15 min), la connexion est refusée avec un code `429`. Le compteur est une **fenêtre glissante lue dans `audit_logs`**, où chaque échec est de toute façon déjà journalisé : à cette échelle (5-15 utilisateurs, LAN), une requête indexée sur 15 minutes de journal coûte moins cher à exploiter qu'un service Redis à installer et surveiller. Une connexion réussie remet le compteur à zéro, et le verrouillage lui-même est journalisé (`auth.login_blocked`). La vérification a lieu **avant** toute comparaison de mot de passe, y compris pour un email inconnu — sinon l'énumération de comptes serait sans limite.
+- **`/docs`** : passer `DOCS_ENABLED=false` dès que l'application est exposée au-delà du poste de développement. La documentation décrit toute la surface d'API, administration comprise ; le réglage coupe aussi `/redoc` et `/openapi.json`.
+- **Mots de passe temporaires** : à la création d'un compte comme à une réinitialisation, le mot de passe généré est affiché **une seule fois** dans la réponse de l'API et dans l'écran d'administration. Il n'est stocké nulle part en clair, n'est jamais journalisé et ne peut pas être reconsulté — il doit être transmis à l'utilisateur hors application (les notifications email sont en V2).
+- **Le frontend ne fait aucune autorisation.** Le composant `<Can>` et `<ProtectedRoute>` masquent des éléments d'interface pour le confort ; la seule autorité reste `require_permission` côté backend, doublée de la vérification de scope multi-site dans les services.
+
+---
+
+## Tests
+
+```bash
+make test
+```
+
+- **Backend** : tests unitaires sur les points critiques listés en section 12 du cahier des charges — machine à états des tâches, matrice RBAC rôle par rôle, scope multi-site, immutabilité de l'audit, politique de mot de passe, JWT, bornes de génération RRULE. Aucune base de données n'est requise : `tests/conftest.py` pose les variables d'environnement nécessaires.
+- **Tests d'intégration** : marqués `@pytest.mark.integration` et **ignorés par défaut**. Ils couvrent le trigger append-only sur `audit_logs` et surtout **l'étanchéité du scope multi-site** (deux chefs d'équipe sur deux sites : aucun ne doit voir ni toucher les tâches et incidents de l'autre, même en connaissant l'identifiant). Pour les exécuter, fournir une base de test **déjà migrée** :
+  ```bash
+  cd backend
+  TEST_DATABASE_URL=postgresql+asyncpg://sentinel:changeme@localhost:5432/sentinel_test poetry run pytest -m integration
+  ```
+- **Frontend** : Vitest sur `src/**/*.test.ts` (`npm run test`).
+- **E2E Playwright** (`npm run test:e2e`) : parcours critiques — authentification et redirections, cycle de vie complet d'une tâche, déclaration/résolution d'un incident, et vérification que l'écran d'audit n'offre aucune action d'écriture. Ces tests s'exécutent contre une **pile réelle** (backend + PostgreSQL migré + frontend servi), c'est tout leur intérêt ; ils ne sont donc lancés ni par `make test` ni par la CI. Avant la première exécution :
+  ```bash
+  cd frontend
+  npx playwright install chromium      # télécharge le navigateur (une fois)
+  E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... npm run test:e2e
+  ```
+  Les identifiants ne sont jamais écrits en dur : les specs échouent avec un message explicite si les variables manquent.
 
 ---
 

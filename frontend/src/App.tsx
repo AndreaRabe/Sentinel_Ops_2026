@@ -3,6 +3,7 @@ import { RouterProvider } from "react-router-dom";
 import { AppProviders } from "./app/providers";
 import { router } from "./app/router";
 import { apiClient } from "@/lib/api-client";
+import { ScanLoader } from "@/components/ui/loaders";
 import { useAuthStore } from "@/store/auth-store";
 
 export default function App() {
@@ -20,8 +21,15 @@ export default function App() {
       .finally(() => setInitialized());
   }, [setSession, setInitialized]);
 
-  // TODO Phase 9 : ecran de chargement "scan" (voir cahier des charges section 11)
-  if (!isInitialized) return null;
+  // Tant que la session n'est pas resolue, on affiche le chargement "scan"
+  // plutot qu'un ecran blanc ou un flash vers /login.
+  if (!isInitialized) {
+    return (
+      <div className="min-h-screen bg-bg p-8">
+        <ScanLoader label="Ouverture de la session" rows={3} />
+      </div>
+    );
+  }
 
   return (
     <AppProviders>

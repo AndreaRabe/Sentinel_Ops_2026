@@ -56,6 +56,17 @@ def decode_access_token(token: str) -> dict:
     return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
 
 
+def generate_temporary_password() -> str:
+    """Mot de passe temporaire pour un compte cree ou reinitialise.
+
+    Genere aleatoirement, affiche une seule fois a l'administrateur puis jamais
+    reconsultable : seul son hash Argon2id est conserve. Le compte est cree avec
+    must_change_password = True, ce qui force son remplacement a la premiere
+    connexion.
+    """
+    return secrets.token_urlsafe(12)
+
+
 def generate_refresh_token() -> str:
     return secrets.token_urlsafe(48)
 

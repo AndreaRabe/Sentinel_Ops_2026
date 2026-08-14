@@ -20,6 +20,9 @@ frontend/tsconfig.tsbuildinfo
 postgres_data/
 uploads/
 backups/
+# Pieces jointes deposees par les utilisateurs (voir ATTACHMENTS_DIR).
+storage/
+backend/storage/
 
 # IDE
 .vscode/

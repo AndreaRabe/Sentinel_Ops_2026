@@ -13,6 +13,20 @@ async def get_by_name(db: AsyncSession, name: str) -> Role | None:
     return result.scalar_one_or_none()
 
 
+async def get_by_id(db: AsyncSession, role_id) -> Role | None:
+    return await db.get(Role, role_id)
+
+
+async def list_all(db: AsyncSession) -> list[Role]:
+    result = await db.execute(select(Role).order_by(Role.name))
+    return list(result.scalars().all())
+
+
+async def list_permission_codes(db: AsyncSession) -> list[str]:
+    result = await db.execute(select(Permission.code).order_by(Permission.code))
+    return list(result.scalars().all())
+
+
 async def get_permission_codes(db: AsyncSession, role_id) -> set[str]:
     result = await db.execute(
         select(Permission.code)

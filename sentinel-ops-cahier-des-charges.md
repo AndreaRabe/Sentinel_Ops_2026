@@ -177,9 +177,27 @@ Frontend : composants (Vitest+RTL) + E2E (Playwright) sur les parcours critiques
 
 ---
 
-## 14. Ce qu'il reste à faire
+## 14. Roadmap par phases
 
-- Roadmap détaillée par phases avec jalons
-- Setup initial du dépôt (structure des dossiers, Poetry, Docker Compose, CI de base)
-- Implémentation progressive module par module, en commençant par Auth + RBAC (fondation de tout le reste)
-- Écrans restants à designer : Planning/Calendrier, Incidents, Équipe/Agents, Rapports, Audit, Paramètres, Administration
+| Phase | Périmètre | État |
+|---|---|---|
+| 1-4 | Setup du dépôt : structure des dossiers, Poetry, npm, Alembic, Makefile, CI | ✅ Fait |
+| 5 | **Auth & RBAC** : login/refresh/logout, mot de passe temporaire forcé, politique de mot de passe (Argon2id + zxcvbn + historique), matrice RBAC, scope multi-site (ABAC), réinitialisation par un administrateur | ✅ Fait |
+| 6 | **Administration** : utilisateurs (CRUD, activation, reset), sites, consultation des rôles, paramètres système | ✅ Fait |
+| 7 | **Tâches** : machine à états, assignation multiple, checklist, commentaires, pièces jointes, dépendances (sans cycle), historique, modèles + récurrence RRULE | ✅ Fait |
+| 8 | **Incidents** : déclaration, gravité, journal d'actions, résolution avec compte rendu, clôture, pièces jointes | ✅ Fait |
+| 9 | **Dashboard, planning, notifications in-app** | ✅ Fait |
+| 10 | **Rapports & exports** PDF/Excel, consultation de l'audit (lecture seule) | ✅ Fait |
+| 11 | **Jobs planifiés** : détection des retards, génération des tâches récurrentes | ✅ Fait |
+| 12 | **Durcissement** : verrouillage brute-force du login, `/docs` désactivable, tests d'intégration (étanchéité multi-site, immutabilité de l'audit), specs E2E Playwright des parcours critiques | ✅ Fait (specs E2E écrites, jamais exécutées) |
+| 13 | **Mise en production** : conteneurisation Docker Compose + nginx TLS, sauvegardes hors machine | ⏳ À faire |
+| V2 | MFA, rotations/gardes et congés, notifications email/SMS, rôle auditeur séparé, intégrations LDAP/SSO | 🔜 Backlog |
+
+### Écarts assumés par rapport aux sections précédentes
+
+- **`task_status_history`** : table ajoutée au modèle de données de la section 4. L'historique des tâches est exigé au périmètre V1, mais `audit_logs` n'est lisible qu'avec la permission `audit:read` (Super Admin et Responsable) : un agent doit pouvoir consulter l'historique de la tâche qu'il traite sans accéder au journal de conformité.
+- **`LATE` comme statut stocké** : conforme au diagramme de la section 4. La conséquence est que le statut précédent (`ASSIGNED` ou `IN_PROGRESS`) n'est plus porté par la colonne `status` — il reste consultable dans `task_status_history`.
+- **Réinitialisation de mot de passe sans email** : les notifications email sont en V2. En V1, un administrateur déclenche la réinitialisation et le mot de passe temporaire s'affiche une seule fois à son écran, à transmettre hors application.
+- **Rôles en lecture seule dans l'API** : aucune route n'expose l'écriture sur `role_permissions`. La matrice vit dans `backend/app/core/rbac_matrix.py` et n'évolue que par migration versionnée.
+- **Verrouillage brute-force sans Redis** : la section 7 prévoit un compteur Redis. Redis ayant été retiré de l'outillage actif, le compteur est une fenêtre glissante lue dans `audit_logs`, où chaque échec est déjà journalisé. Comportement identique (5 tentatives / 15 min), sans service supplémentaire à exploiter. Le cache Redis, lui, reste sans objet à cette échelle.
+- **Pas d'entité « équipes » distincte** : le périmètre V1 mentionne la « gestion des équipes », mais le modèle de données de la section 4 ne comporte pas de table `teams`. Le besoin est couvert par `sites` + `user_sites` + le rôle `chef_equipe`. **À arbitrer** si des équipes nommées, indépendantes des sites, s'avèrent nécessaires.

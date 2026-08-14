@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import InvalidCredentialsError
@@ -17,6 +17,15 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     user = await user_repository.get_by_id(db, uuid.UUID(payload["sub"]))
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or user.deleted_at is not None:
         raise InvalidCredentialsError("Session invalide.")
     return user
+
+
+def get_client_ip(request: Request) -> str | None:
+    """IP source journalisee en audit.
+
+    Pas de lecture de X-Forwarded-For : en LAN derriere un unique reverse proxy
+    maitrise, l'en-tete serait falsifiable sans apporter d'information fiable.
+    """
+    return request.client.host if request.client else None

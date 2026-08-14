@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.refresh_token import RefreshToken
@@ -31,3 +31,14 @@ async def get_valid_by_hash(db: AsyncSession, token_hash: str) -> RefreshToken |
 async def revoke(db: AsyncSession, token: RefreshToken) -> None:
     token.revoked_at = func.now()
     await db.flush()
+
+
+async def revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> int:
+    """Coupe toutes les sessions actives d'un compte (desactivation, reset mot de passe)."""
+    result = await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=func.now())
+    )
+    await db.flush()
+    return result.rowcount or 0

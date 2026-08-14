@@ -3,10 +3,11 @@
 Politique de mot de passe (zxcvbn + historique anti-reutilisation),
 emission/rotation des tokens JWT + refresh token opaque hashe.
 
-NOTE : le verrouillage brute-force (cahier des charges section 7) est
-deliberement differe - il necessite Redis, non utilise pour le moment
-(voir README). Les tentatives de login echouees restent journalisees dans
-audit_logs, mais rien ne bloque encore un compte apres N echecs.
+Le verrouillage brute-force (cahier des charges section 7) est implemente
+SANS Redis : le compteur est une fenetre glissante lue dans `audit_logs`, ou
+chaque echec est de toute facon deja journalise. A l'echelle du projet
+(5-15 utilisateurs, LAN), une requete indexee sur 15 minutes de journal coute
+moins cher a exploiter qu'un service supplementaire a installer et surveiller.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -14,7 +15,11 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import InvalidCredentialsError, PasswordPolicyError
+from app.core.exceptions import (
+    AccountLockedError,
+    InvalidCredentialsError,
+    PasswordPolicyError,
+)
 from app.core.security import (
     check_password_strength,
     create_access_token,
@@ -44,10 +49,54 @@ async def _issue_tokens(db: AsyncSession, user: User) -> tuple[str, str]:
     return access_token, refresh_token_plain
 
 
+async def _lockout_window_start(db: AsyncSession, user: User | None) -> datetime:
+    """Debut de la fenetre de comptage des echecs.
+
+    On repart de la derniere connexion reussie quand elle est plus recente que
+    la fenetre : sinon des echecs anterieurs a une connexion legitime
+    continueraient a compter et pourraient verrouiller un utilisateur qui
+    vient pourtant de prouver qu'il connait son mot de passe.
+    """
+    window_start = datetime.now(timezone.utc) - timedelta(minutes=settings.login_lockout_minutes)
+    if user is not None and user.last_login_at and user.last_login_at > window_start:
+        return user.last_login_at
+    return window_start
+
+
+async def _assert_not_locked(
+    db: AsyncSession, email: str, user: User | None, ip_address: str | None
+) -> None:
+    since = await _lockout_window_start(db, user)
+    failures = await audit_service.count_failed_logins(db, email, since)
+    if failures < settings.login_max_attempts:
+        return
+
+    # Le verrouillage lui-meme est journalise : c'est un evenement de securite
+    # a part entiere, distinct d'un simple echec de mot de passe.
+    await audit_service.log_action(
+        db,
+        actor_user_id=user.id if user else None,
+        action="auth.login_blocked",
+        resource_type="user",
+        resource_id=email,
+        details={"failed_attempts": failures},
+        ip_address=ip_address,
+    )
+    await db.commit()
+    raise AccountLockedError(
+        f"Trop de tentatives echouees. Reessayez dans {settings.login_lockout_minutes} minutes."
+    )
+
+
 async def authenticate(
     db: AsyncSession, email: str, password: str, ip_address: str | None
 ) -> tuple[str, str, bool]:
     user = await user_repository.get_by_email(db, email)
+
+    # Verifie AVANT toute comparaison de mot de passe : un compte verrouille ne
+    # doit pas pouvoir etre teste, meme avec le bon mot de passe.
+    await _assert_not_locked(db, email, user, ip_address)
+
     if user is None or not user.is_active or not verify_password(password, user.password_hash):
         await audit_service.log_action(
             db,

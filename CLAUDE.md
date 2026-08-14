@@ -26,7 +26,30 @@ Toutes les decisions de conception detaillees sont dans `sentinel-ops-cahier-des
 
 ## Roadmap actuelle
 
-Voir section 13 du cahier des charges pour le detail des phases. Prochaine etape : Phase 5 — Auth & RBAC (fondation dont dependent tous les autres modules). Ne pas developper de module metier avant que l'authentification et les permissions soient completes et testees.
+Voir **section 14** du cahier des charges pour le detail des phases et les ecarts assumes.
+
+Les phases 1 a 12 sont faites : auth/RBAC, administration, taches, incidents, dashboard, planning, notifications, rapports/exports, audit, jobs planifies, l'ensemble des ecrans frontend, et le durcissement (verrouillage brute-force, tests d'integration, specs E2E).
+
+Prochaine etape : **Phase 13 — mise en production** (Docker Compose + nginx TLS, sauvegardes hors machine).
+
+Deux points restent a arbitrer par l'utilisateur, ne pas trancher seul :
+- **Entite « equipes »** : le perimetre V1 la mentionne, le modele de donnees de la section 4 ne la comporte pas. Couverte aujourd'hui par sites + role chef_equipe.
+- **Docker / nginx** : documentes comme cible mais retires de l'outillage actif (voir git log). Ne pas les reintroduire sans demande explicite.
+
+## Tests
+
+- `make test` : unitaires backend (aucune base requise, `tests/conftest.py` pose les variables d'environnement) + vitest frontend.
+- Tests d'integration : marques `@pytest.mark.integration`, sautes sans `TEST_DATABASE_URL`. Le plus important est `tests/integration/test_site_isolation.py` (etancheite multi-site).
+- E2E Playwright dans `frontend/e2e/` : exigent une pile reelle, lances a la main via `npm run test:e2e`. **Jamais executes a ce jour.**
+
+## Points d'attention specifiques
+
+- **Machine a etats des taches** : `backend/app/core/task_state.py`, module pur et intégralement teste. Toute evolution du cycle de vie passe par la, jamais par une condition ad hoc dans un service.
+- **Scope multi-site** : predicats purs dans `backend/app/core/scope.py`, resolution des sites dans `backend/app/services/scope_service.py`. Tout service manipulant une ressource rattachee a un site doit appeler `scope_service.assert_site_allowed(...)` explicitement.
+- **APScheduler suppose UN SEUL processus backend.** Lancer uvicorn avec plusieurs workers dupliquerait les taches recurrentes : dans ce cas, mettre `SCHEDULER_ENABLED=false` sur tous les workers sauf un.
+- **Pieces jointes** : stockees sur disque (`ATTACHMENTS_DIR`), metadonnees en base. Les deux doivent etre sauvegardes ensemble.
+- **Moteur SQLAlchemy paresseux** (`app/db/session.py`) : cree au premier acces, pas a l'import. Ne pas revenir a une creation a l'import — cela imposerait d'installer asyncpg pour lancer le moindre test unitaire.
+- **Verrouillage brute-force** : compteur lu dans `audit_logs`, pas de Redis. La verification precede toute comparaison de mot de passe, y compris pour un email inconnu.
 
 ## Commandes utiles
 
